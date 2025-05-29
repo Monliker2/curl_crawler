@@ -65,24 +65,32 @@ crawl() {
   local html
   html=$(curl -Ls "$page_url") || return
 
-  # 5.1) Ищем прямые ссылки на файлы
+  if [[ $DEBUG -eq 1 ]]; then
+    echo "▶ HTML получен:"
+    echo "$html"
+  fi
+
+  # 5.1) Ищем прямые ссылки на файлы (учитываем пробелы вокруг =)
   local files
   files=$(echo "$html" |
-    grep -Eo 'href="([^"#]+)"' |
+    grep -Eo 'href\s*=\s*"[^"]+"' |
     cut -d\" -f2 |
     grep -Ei "$EXT_REGEX" |
-    grep -E "^https?://|^/" |
     sort -u)
 
+  if [[ $DEBUG -eq 1 ]]; then
+    echo "▶ Ссылки на файлы перед HEAD-запросом:"
+    echo "$files"
+  fi
+
   if [[ -n "$files" ]]; then
-    if [[ $DEBUG -eq 1 ]]; then
-      echo "▶ Возможные файлы:"
-      echo "$files"
-    fi
     while IFS= read -r f; do
-      # Нормализуем относительный путь
+      # Нормализуем относительные пути
       if [[ "$f" =~ ^/ ]]; then
-        f="https://$DOMAIN$f"
+        f="http://$DOMAIN$f"
+      elif [[ ! "$f" =~ ^https?:// ]]; then
+        # Относительный путь без / в начале
+        f="http://$DOMAIN/$f"
       fi
       if [[ $DEBUG -eq 1 ]]; then
         echo "  • Проверяю: $f"
@@ -98,7 +106,7 @@ crawl() {
   # 5.2) Ищем ссылки на другие страницы внутри того же домена
   local pages
   pages=$(echo "$html" |
-    grep -Eo 'href="([^"#]+)"' |
+    grep -Eo 'href\s*=\s*"[^"]+"' |
     cut -d\" -f2 |
     grep -Ev "$EXT_REGEX" |
     grep -E "^https?://$DOMAIN/|^/" |
@@ -106,7 +114,7 @@ crawl() {
 
   while IFS= read -r p; do
     if [[ "$p" =~ ^/ ]]; then
-      p="https://$DOMAIN$p"
+      p="http://$DOMAIN$p"
     fi
     crawl "$p"
   done <<<"$pages"
